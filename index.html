@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cámara Oscura 3D — Simulador de Óptica Geométrica (UNSE)</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+      }
+    }
+  </script>
+    <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <div class="app" id="appRoot">
+    <video id="webcamVideo" playsinline muted class="hidden"></video>
+    <input id="fileInput" type="file" accept="image/*" class="hidden" />
+
+    <!-- Barra superior -->
+    <header class="topbar">
+      <a href="#top" class="brand" id="brandLink">Cámara Oscura 3D</a>
+
+      <nav class="topnav" aria-label="Secciones de la simulación">
+        <button type="button" data-tab="controls" class="active">Simulador</button>
+        <button type="button" data-tab="screen">Cámara y Proyección</button>
+        <button type="button" data-tab="lab">Mediciones (4.3)</button>
+        <button type="button" data-tab="theory">Informe UNSE</button>
+      </nav>
+
+      <button type="button" id="zenBtn" class="btn-primary">Modo Exposición 3D</button>
+    </header>
+
+    <!-- Área principal -->
+    <main class="workspace">
+      <!-- Zona izquierda: Escenario 3D -->
+      <section class="stage-wrap" aria-label="Escenario 3D de óptica geométrica">
+        <div id="canvas3d"></div>
+
+        <div class="hud-readout">
+          <div class="hud-sub">
+            UNSE FCEyT · Óptica Geométrica ·
+            <span class="hud-regime" id="hudRegime">Equilibrio nitidez / brillo</span>
+          </div>
+          <div class="hud-metrics mono">
+            <span id="hudDo">dₒ = 120 cm</span>
+            <span class="hud-sep">/</span>
+            <span id="hudDi">dᵢ = 22 cm</span>
+            <span class="hud-sep">/</span>
+            <span id="hudD">D = 0.85 mm</span>
+            <span class="hud-sep">/</span>
+            <span class="text-cyan" id="hudM">m = -0.18</span>
+          </div>
+        </div>
+
+        <div class="dock-3d">
+          <button type="button" id="dockToggleBtn" class="dock-toggle">Ocultar barra 3D</button>
+          <div class="dock-bar" id="dockBar">
+            <div class="dock-group dock-divider">
+              <button type="button" class="dock-btn preset-active" data-preset="cutaway">Corte 3D</button>
+              <button type="button" class="dock-btn" data-preset="side">Lateral rayos</button>
+              <button type="button" class="dock-btn" data-preset="screen">Pantalla interna</button>
+              <button type="button" class="dock-btn" data-preset="object">Objeto</button>
+            </div>
+            <div class="dock-group">
+              <button type="button" id="btnCutaway" class="dock-btn chip-amber">Vista corte</button>
+              <button type="button" id="btnRays" class="dock-btn chip-cyan">Rayos</button>
+              <button type="button" id="btnCones" class="dock-btn chip-amber">Haces cónicos</button>
+              <button type="button" id="btnTriangles" class="dock-btn chip-off">Triángulos</button>
+              <button type="button" id="btnPhotons" class="dock-btn chip-slate">Fotones</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Zona derecha: Panel de control y análisis -->
+      <aside class="aside" id="asidePanel" aria-label="Panel de variables, cámara y análisis">
+        <!-- Tira de proyección en vivo (visible en Controles) -->
+        <div class="mini-strip" id="miniStrip">
+          <div class="mini-canvas-box">
+            <canvas id="miniScreenCanvas" width="192" height="192" aria-label="Miniatura en vivo de proyección"></canvas>
+          </div>
+          <div class="mini-meta">
+            <div class="mini-header">
+              <span class="mini-title">Pantalla interna (invertida)</span>
+              <button type="button" id="miniCamBtn" class="btn-pill" style="padding:4px 8px;font-size:11px;">Usar cámara</button>
+            </div>
+            <div class="mini-kpis mono">
+              <div class="kpi-box">
+                <div class="kpi-label">Nitidez</div>
+                <div class="kpi-val text-cyan" id="miniSharpness">92%</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-label">Brillo</div>
+                <div class="kpi-val text-amber" id="miniBrightness">45%</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-label">|hᵢ|</div>
+                <div class="kpi-val" id="miniHi">11.0 cm</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Selector de pestañas -->
+        <div class="tablist" role="tablist">
+          <button type="button" class="tab-btn active" data-tab="controls" role="tab" aria-selected="true">Controles</button>
+          <button type="button" class="tab-btn" data-tab="screen" role="tab" aria-selected="false">Cámara</button>
+          <button type="button" class="tab-btn" data-tab="lab" role="tab" aria-selected="false">Mediciones</button>
+          <button type="button" class="tab-btn" data-tab="theory" role="tab" aria-selected="false">Teoría</button>
+        </div>
+
+        <div class="tab-body">
+          <!-- TAB 1: CONTROLES -->
+          <div class="tab-pane active" id="pane-controls">
+            <div class="stack">
+              <div class="stack-sm">
+                <div class="row-between">
+                  <span class="section-label">Sistema óptico (Sección 2.7)</span>
+                  <button type="button" id="resetBtn" class="btn-ghost">Restablecer</button>
+                </div>
+                <div class="segmented">
+                  <button type="button" class="seg-btn active" data-mode="pinhole">Orificio (Sin lente)</button>
+                  <button type="button" class="seg-btn" data-mode="lens">Con lente convergente</button>
+                </div>
+              </div>
+
+              <div class="stack-sm">
+                <span class="section-label">Escenarios de demostración rápida</span>
+                <div class="grid-2">
+                  <button type="button" class="btn-card" data-scenario="optimal">Orificio óptimo</button>
+                  <button type="button" class="btn-card" data-scenario="wide">Abertura grande (borrosa)</button>
+                  <button type="button" class="btn-card" data-scenario="diffraction">Límite de difracción</button>
+                  <button type="button" class="btn-card" data-scenario="unsealed">Sin afiche / filtración</button>
+                </div>
+              </div>
+
+              <!-- Sliders -->
+              <div class="slider-block">
+                <div class="row-between">
+                  <label for="sliderAperture">Tamaño de abertura (D)</label>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <button type="button" id="optimalApBtn" class="btn-ghost text-emerald" style="font-size:11px;">Óptimo (<span id="optApVal">0.50</span> mm)</button>
+                    <span class="mono text-amber" style="font-size:12px;" id="valAperture">0.85 mm</span>
+                  </div>
+                </div>
+                <input id="sliderAperture" class="lab-slider" type="range" min="0.15" max="22" step="0.05" value="0.85" />
+                <div class="row-between dim-xs">
+                  <span>0.15 mm (difracción)</span>
+                  <span>22 mm (borrosa + brillo)</span>
+                </div>
+              </div>
+
+              <div class="slider-block">
+                <div class="row-between">
+                  <label for="sliderDi">Distancia de proyección dᵢ (focal efectiva)</label>
+                  <span class="mono text-cyan" style="font-size:12px;" id="valDi">22 cm</span>
+                </div>
+                <input id="sliderDi" class="lab-slider" type="range" min="8" max="48" step="1" value="22" />
+              </div>
+
+              <div class="lens-box stack-sm hidden" id="lensControlBox">
+                <div class="slider-block">
+                  <div class="row-between">
+                    <label for="sliderFocal" style="color:#bae6fd;">Distancia focal de la lente (f)</label>
+                    <span class="mono text-cyan" style="font-size:12px;" id="valFocal">18.0 cm</span>
+                  </div>
+                  <input id="sliderFocal" class="lab-slider" type="range" min="6" max="36" step="0.5" value="18" />
+                </div>
+                <div class="muted-xs" id="lensFocusInfo">Foco conjugado s′ = 21.2 cm</div>
+              </div>
+
+              <div class="slider-block">
+                <div class="row-between">
+                  <label for="sliderDo">Distancia objeto–orificio (dₒ)</label>
+                  <span class="mono" style="font-size:12px;" id="valDo">120 cm</span>
+                </div>
+                <input id="sliderDo" class="lab-slider" type="range" min="24" max="220" step="2" value="120" />
+              </div>
+
+              <div class="slider-block">
+                <div class="row-between">
+                  <label for="sliderHo">Altura del objeto (hₒ)</label>
+                  <span class="mono" style="font-size:12px;" id="valHo">60 cm</span>
+                </div>
+                <input id="sliderHo" class="lab-slider" type="range" min="16" max="110" step="2" value="60" />
+              </div>
+
+              <div class="slider-block">
+                <div class="row-between">
+                  <label for="sliderAmbient">Iluminación exterior (flujo incidente)</label>
+                  <span class="mono text-amber" style="font-size:12px;" id="valAmbient">80%</span>
+                </div>
+                <input id="sliderAmbient" class="lab-slider" type="range" min="10" max="100" step="5" value="80" />
+              </div>
+
+              <div class="slider-block">
+                <div class="row-between">
+                  <label for="sliderLeak">Filtración de luz por uniones (sellado)</label>
+                  <span class="mono" style="font-size:12px;" id="valLeak">8%</span>
+                </div>
+                <input id="sliderLeak" class="lab-slider" type="range" min="0" max="100" step="2" value="8" />
+              </div>
+
+              <div class="slider-block">
+                <div class="row-between">
+                  <label for="sliderLambda">Longitud de onda media (λ)</label>
+                  <span class="mono" style="font-size:12px;" id="valLambda">550 nm</span>
+                </div>
+                <input id="sliderLambda" class="lab-slider" type="range" min="400" max="700" step="10" value="550" />
+              </div>
+
+              <div class="row-between" style="padding-top:8px;border-top:1px solid var(--border);">
+                <div>
+                  <div style="font-size:12px;font-weight:500;">Revestimiento con afiche negro</div>
+                  <div class="muted-xs">Absorbe reflexiones internas y mejora contraste</div>
+                </div>
+                <button type="button" id="linerSwitch" class="btn-pill on-emerald">Activado</button>
+              </div>
+
+              <div class="card">
+                <div class="text-amber" style="font-size:12px;font-weight:600;margin-bottom:4px;" id="diagTitle">
+                  Diagnóstico: Equilibrio nitidez / brillo
+                </div>
+                <div class="muted-xs" style="line-height:1.5;color:#cbd5e1;" id="diagText"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CAMARA Y PROYECCION -->
+          <div class="tab-pane" id="pane-screen">
+            <div class="stack">
+              <div class="stack-sm">
+                <div class="row-between">
+                  <span class="section-label">Escena u objeto exterior</span>
+                  <span class="muted-xs">Inversión vertical y lateral (180°)</span>
+                </div>
+                <div class="grid-2" id="sourceGrid">
+                  <button type="button" class="btn-card active" data-source="asymmetric-f">Letra F asimétrica</button>
+                  <button type="button" class="btn-card" data-source="candle-arrow">Flecha y vela</button>
+                  <button type="button" class="btn-card" data-source="courtyard">Patio exterior</button>
+                  <button type="button" class="btn-card" data-source="webcam">Cámara en vivo</button>
+                  <button type="button" class="btn-card" data-source="upload">Imagen propia</button>
+                </div>
+              </div>
+
+              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                <button type="button" id="webcamToggleBtn" class="btn-pill">Usar cámara real</button>
+                <button type="button" id="uploadTriggerBtn" class="btn-pill">Subir foto</button>
+                <button type="button" id="rulerToggleBtn" class="btn-pill on-amber">Regla cm</button>
+                <button type="button" id="sideBySideBtn" class="btn-pill on-cyan">Comparar</button>
+              </div>
+
+              <div class="card muted-xs hidden" id="webcamMessageBox" style="line-height:1.45;"></div>
+
+              <div class="grid-2" id="monitorsGrid">
+                <div class="stack-sm" id="sourcePreviewWrap">
+                  <div class="row-between muted-xs">
+                    <span>Objeto exterior</span>
+                    <span class="mono" id="srcPreviewHo">hₒ = 60 cm</span>
+                  </div>
+                  <div class="monitor-frame">
+                    <canvas id="previewSourceCanvas" width="320" height="320"></canvas>
+                  </div>
+                </div>
+
+                <div class="stack-sm">
+                  <div class="row-between muted-xs">
+                    <span>Proyección interna</span>
+                    <span class="mono text-amber" id="scrPreviewHi">|hᵢ| = 11.0 cm</span>
+                  </div>
+                  <div class="monitor-frame">
+                    <canvas id="previewScreenCanvas" width="360" height="360"></canvas>
+                  </div>
+                </div>
+              </div>
+
+              <div class="stack-sm">
+                <div>
+                  <div class="row-between" style="font-size:12px;margin-bottom:4px;">
+                    <span>Nitidez (definición de bordes)</span>
+                    <span class="mono" id="gaugeSharpText">92%</span>
+                  </div>
+                  <div class="bar-track"><div class="bar-fill" id="gaugeSharpBar" style="width:92%;background:var(--cyan);"></div></div>
+                </div>
+
+                <div>
+                  <div class="row-between" style="font-size:12px;margin-bottom:4px;">
+                    <span>Brillo en pantalla</span>
+                    <span class="mono" id="gaugeBrightText">45%</span>
+                  </div>
+                  <div class="bar-track"><div class="bar-fill" id="gaugeBrightBar" style="width:45%;background:var(--amber);"></div></div>
+                </div>
+
+                <div>
+                  <div class="row-between" style="font-size:12px;margin-bottom:4px;">
+                    <span>Contraste (sellado + afiche negro)</span>
+                    <span class="mono" id="gaugeContrastText">90%</span>
+                  </div>
+                  <div class="bar-track"><div class="bar-fill" id="gaugeContrastBar" style="width:90%;background:var(--emerald);"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: MEDICIONES (4.3) -->
+          <div class="tab-pane" id="pane-lab">
+            <div class="stack">
+              <div class="card stack-sm">
+                <div class="row-between">
+                  <span class="section-label">Calculadora geométrica en vivo</span>
+                  <span class="muted-xs text-amber">Valores de simulación</span>
+                </div>
+                <div class="grid-2">
+                  <div class="kpi-box" style="padding:8px;">
+                    <div class="kpi-label">Aumento lateral (m)</div>
+                    <div class="mono text-amber" style="font-size:13px;margin-top:2px;" id="calcMag">m = -0.183</div>
+                    <div class="dim-xs">Signo negativo: invertida</div>
+                  </div>
+                  <div class="kpi-box" style="padding:8px;">
+                    <div class="kpi-label">Altura proyectada |hᵢ|</div>
+                    <div class="mono text-cyan" style="font-size:13px;margin-top:2px;" id="calcHi">|hᵢ| = 11.00 cm</div>
+                    <div class="dim-xs" id="calcCoords">s = -120, s′ = +22 cm</div>
+                  </div>
+                  <div class="kpi-box" style="padding:8px;">
+                    <div class="kpi-label">Círculo de confusión (b)</div>
+                    <div class="mono" style="font-size:13px;margin-top:2px;" id="calcBlur">1.03 mm</div>
+                    <div class="dim-xs" id="calcBlurParts">Geom: 1.01 · Difr: 0.35</div>
+                  </div>
+                  <div class="kpi-box" style="padding:8px;">
+                    <div class="kpi-label">Orificio óptimo (Rayleigh)</div>
+                    <div class="mono text-emerald" style="font-size:13px;margin-top:2px;" id="calcOpt">D_ópt ≈ 0.50 mm</div>
+                    <div class="dim-xs" id="calcCurD">Actual: D = 0.85 mm</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="stack-sm">
+                <div>
+                  <div class="section-label">Registro cuantitativo (Sección 4.3)</div>
+                  <div class="muted-xs">Ingresa mediciones reales o captura un ejemplo de la simulación.</div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                  <button type="button" id="addSimTrialBtn" class="btn-pill on-amber">Capturar ejemplo simulado</button>
+                  <button type="button" id="addBlankTrialBtn" class="btn-pill">+ Nueva fila real</button>
+                  <button type="button" id="exportCsvBtn" class="btn-pill" style="margin-left:auto;">CSV</button>
+                </div>
+                <div id="trialsList" class="stack-sm"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 4: TEORÍA -->
+          <div class="tab-pane" id="pane-theory">
+            <div class="stack">
+              <div class="card stack-sm">
+                <div class="row-between">
+                  <span class="section-label">Esquema de triángulos semejantes</span>
+                  <span class="mono text-amber" style="font-size:11px;">|hᵢ|/hₒ = dᵢ/dₒ</span>
+                </div>
+                <svg id="svgTriangles" viewBox="0 0 340 128" style="width:100%;height:auto;border-radius:8px;background:#020617;border:1px solid var(--border);"></svg>
+              </div>
+
+              <div class="card stack-sm">
+                <div class="row-between">
+                  <span class="section-label">Compromiso abertura vs. difracción</span>
+                  <span class="mono text-emerald" style="font-size:11px;" id="theoryOptLabel">D_ópt ≈ 0.50 mm</span>
+                </div>
+                <svg id="svgRayleigh" viewBox="0 0 340 148" style="width:100%;height:auto;border-radius:8px;background:#020617;border:1px solid var(--border);"></svg>
+                <div style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;" class="muted-xs">
+                  <span style="color:#f8fafc;">― Total (b)</span>
+                  <span class="text-amber">--- Geométrico</span>
+                  <span class="text-cyan">··· Difracción</span>
+                  <span class="text-emerald">| D óptimo</span>
+                </div>
+              </div>
+
+              <div class="card stack-sm">
+                <span class="section-label">Registro cualitativo en vivo (Tabla 4.2)</span>
+                <div id="qualTable"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
